@@ -14,7 +14,6 @@ with open('homebox.key', 'r', encoding='utf8') as ifile:
 def get_client():
     return HomeboxClient(base_url, username, password)
 
-# Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 @dataclass
@@ -22,61 +21,42 @@ class Location:
     id: str
     name: str
     description: str
-    parent_id: Optional[str]
+    parentId: Optional[str]
     client: 'HomeboxClient' = field(repr=False)
 
     def delete(self):
-        url = f"{self.client.base_url}/locations/{self.id}"
-        res = requests.delete(url, headers=self.client.headers)
+        res = requests.delete(f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers)
         res.raise_for_status()
         logging.info(f"Deleted location '{self.name}'")
+
+    def rename(self, new_name: str):
+        data = {"name": new_name, "description": self.description, "parentId": self.parentId}
+        res = requests.put(f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers, json=data)
+        res.raise_for_status()
+        self.name = new_name
+
+    def set_description(self, new_description: str):
+        data = {"name": self.name, "description": new_description, "parentId": self.parentId}
+        res = requests.put(f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers, json=data)
+        res.raise_for_status()
+        self.description = new_description
 
     def set_parent(self, new_parent_name: str):
         parent = self.client.get_location(new_parent_name)
         if not parent:
             raise ValueError(f"Parent location '{new_parent_name}' not found.")
-        url = f"{self.client.base_url}/locations/{self.id}"
-        data = {
-            "name": self.name,
-            "description": self.description,
-            "parentId": parent["id"]
-        }
-        res = requests.put(url, headers=self.client.headers, json=data)
+        data = {"name": self.name, "description": self.description, "parentId": parent["id"]}
+        res = requests.put(f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers, json=data)
         res.raise_for_status()
-        logging.info(f"Updated parent of '{self.name}' to '{new_parent_name}'")
-        self.parent_id = parent["id"]
-
-    def rename(self, new_name: str):
-        url = f"{self.client.base_url}/locations/{self.id}"
-        data = {
-            "name": new_name,
-            "description": self.description,
-            "parentId": self.parent_id
-        }
-        res = requests.put(url, headers=self.client.headers, json=data)
-        res.raise_for_status()
-        logging.info(f"Renamed location from '{self.name}' to '{new_name}'")
-        self.name = new_name
+        self.parentId = parent["id"]
 
     def to_dict(self):
         return {
             "id": self.id,
             "name": self.name,
             "description": self.description,
-            "parentId": self.parent_id
+            "parentId": self.parentId
         }
-
-    def set_description(self, new_description: str):
-        url = f"{self.client.base_url}/locations/{self.id}"
-        data = {
-            "name": self.name,
-            "description": new_description,
-            "parentId": self.parent_id
-        }
-        res = requests.put(url, headers=self.client.headers, json=data)
-        res.raise_for_status()
-        logging.info(f"Updated description for '{self.name}'")
-        self.description = new_description
 
 @dataclass
 class Tag:
@@ -85,23 +65,16 @@ class Tag:
     client: 'HomeboxClient' = field(repr=False)
 
     def delete(self):
-        url = f"{self.client.base_url}/tags/{self.id}"
-        res = requests.delete(url, headers=self.client.headers)
+        res = requests.delete(f"{self.client.base_url}/tags/{self.id}", headers=self.client.headers)
         res.raise_for_status()
-        logging.info(f"Deleted tag '{self.name}'")
 
     def rename(self, new_name: str):
-        url = f"{self.client.base_url}/tags/{self.id}"
-        res = requests.put(url, headers=self.client.headers, json={"name": new_name})
+        res = requests.put(f"{self.client.base_url}/tags/{self.id}", headers=self.client.headers, json={"name": new_name})
         res.raise_for_status()
-        logging.info(f"Renamed tag '{self.name}' to '{new_name}'")
         self.name = new_name
 
     def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name
-        }
+        return {"id": self.id, "name": self.name}
 
 @dataclass
 class Item:
@@ -109,15 +82,13 @@ class Item:
     name: str
     description: str
     quantity: int
-    location_id: Optional[str]
-    tag_ids: List[str]
+    locationId: Optional[str]
+    tagIds: List[str]
     client: 'HomeboxClient' = field(repr=False)
 
     def delete(self):
-        url = f"{self.client.base_url}/items/{self.id}"
-        res = requests.delete(url, headers=self.client.headers)
+        res = requests.delete(f"{self.client.base_url}/items/{self.id}", headers=self.client.headers)
         res.raise_for_status()
-        logging.info(f"Deleted item '{self.name}'")
 
     def to_dict(self):
         return {
@@ -125,8 +96,8 @@ class Item:
             "name": self.name,
             "description": self.description,
             "quantity": self.quantity,
-            "locationId": self.location_id,
-            "tagIds": self.tag_ids
+            "locationId": self.locationId,
+            "tagIds": self.tagIds
         }
 
 class HomeboxClient:
@@ -136,45 +107,73 @@ class HomeboxClient:
         self._authenticate(username, password)
 
     def _authenticate(self, username, password):
-        login_url = f"{self.base_url}/users/login"
-        res = requests.post(login_url, json={"username": username, "password": password}, headers=self.headers)
+        res = requests.post(f"{self.base_url}/users/login", json={"username": username, "password": password}, headers=self.headers)
         res.raise_for_status()
-        token = res.json().get("token")
-        self.headers["Authorization"] = token
+        self.headers["Authorization"] = res.json()["token"]
+        print(res.json()["token"])
 
-    def get_all_locations(self):
+    def get_all_locations(self) -> List[Location]:
+        """
+        Fetches all locations and enriches them with parentId by querying each /locations/{id}.
+        """
+        # Step 1: Fetch the reduced list
         res = requests.get(f"{self.base_url}/locations", headers=self.headers)
         res.raise_for_status()
-        raw_locations = res.json()
-        return [Location(id=loc["id"], name=loc["name"], description=loc.get("description", ""), parent_id=loc.get("parentId"), client=self) for loc in raw_locations]
+        base_locs = res.json()
+    
+        locations = []
+        for loc in base_locs:
+            loc_id = loc["id"]
+    
+            # Step 2: Fetch full detail for each location
+            detail_res = requests.get(f"{self.base_url}/locations/{loc_id}", headers=self.headers)
+            detail_res.raise_for_status()
+            detailed = detail_res.json()
+    
+            parent_obj = detailed.get("parent")
+            parent_id = parent_obj["id"] if parent_obj else None
+    
+            location = Location(
+                id=loc_id,
+                name=detailed["name"],
+                description=detailed.get("description", ""),
+                parentId=parent_id,
+                client=self
+            )
+            locations.append(location)
+    
+        return locations
 
-    def get_location(self, name, parent_name=None):
-        locations = self.get_all_locations()
-        matches = [loc for loc in locations if loc.name == name]
-        if parent_name is None:
-            return matches[0].to_dict() if matches else None
-        for loc in matches:
-            parent_id = loc.parent_id
-            if parent_id:
-                parent = next((p for p in locations if p.id == parent_id), None)
-                if parent and parent.name == parent_name:
-                    return loc.to_dict()
+    def get_location(self, name, parent_name=None) -> Optional[dict]:
+        """
+        Retrieves a location by name, optionally filtering by parent name.
+        Uses /locations for fast match, then /locations/{id} for parent check.
+        Returns full location dict with 'parentId' field populated.
+        """
+        res = requests.get(f"{self.base_url}/locations", headers=self.headers)
+        res.raise_for_status()
+        all_locs = res.json()
+    
+        candidates = [l for l in all_locs if l["name"] == name]
+        for loc in candidates:
+            loc_id = loc["id"]
+            detail = requests.get(f"{self.base_url}/locations/{loc_id}", headers=self.headers).json()
+            parent = detail.get("parent", {}).get("name")
+            if parent_name is None or parent == parent_name:
+                # Include parentId for downstream consistency
+                detail["parentId"] = detail.get("parent", {}).get("id")
+                return detail
+    
         return None
 
     def create_location(self, name, description="", parent_name=None):
         if self.get_location(name, parent_name):
             logging.info(f"Location '{name}' (parent: '{parent_name}') already exists. Skipping.")
             return None
-        parent_id = None
-        if parent_name:
-            parent = self.get_location(parent_name)
-            if not parent:
-                raise ValueError(f"Parent location '{parent_name}' not found.")
-            parent_id = parent["id"]
+        parent_id = self.get_location(parent_name)["id"] if parent_name else None
         data = {"name": name, "description": description, "parentId": parent_id}
         res = requests.post(f"{self.base_url}/locations", headers=self.headers, json=data)
         res.raise_for_status()
-        logging.info(f"Created location '{name}' under parent '{parent_name}'")
         return res.json()
 
     def resolve_location_path(self, path: str):
@@ -183,13 +182,13 @@ class HomeboxClient:
         parts = path.strip().split('/')
         current_parent = None
         for part in parts:
-            loc = self.get_location(part, parent_name=current_parent)
+            loc = self.get_location(part, current_parent)
             if not loc:
-                raise ValueError(f"Location path '{path}' is invalid. Could not find '{part}' under '{current_parent}'")
+                raise ValueError(f"Location path '{path}' is invalid at '{part}'")
             current_parent = part
         return loc["id"]
 
-    def get_tags(self):
+    def get_tags(self) -> List[Tag]:
         res = requests.get(f"{self.base_url}/tags", headers=self.headers)
         res.raise_for_status()
         return [Tag(id=t["id"], name=t["name"], client=self) for t in res.json()]
@@ -203,39 +202,47 @@ class HomeboxClient:
         t = res.json()
         return Tag(id=t["id"], name=t["name"], client=self)
 
-    def resolve_tag_names(self, tag_names_str: str):
+    def resolve_tag_names(self, tag_names_str: str) -> List[str]:
         if not tag_names_str:
             return []
         tag_names = [t.strip() for t in tag_names_str.split(',')]
-        tags = [self.get_or_create_tag(name) for name in tag_names]
-        return [t.id for t in tags]
+        return [self.get_or_create_tag(name).id for name in tag_names]
 
-    def get_items(self):
+    def get_items(self) -> List[Item]:
         res = requests.get(f"{self.base_url}/items", headers=self.headers)
         res.raise_for_status()
-        return [Item(id=i["id"], name=i["name"], description=i.get("description", ""), quantity=i.get("quantity", 1), location_id=i.get("locationId"), tag_ids=i.get("tagIds", []), client=self) for i in res.json()]
+        return [
+            Item(
+                id=i["id"],
+                name=i["name"],
+                description=i.get("description", ""),
+                quantity=i.get("quantity", 1),
+                locationId=i.get("locationId"),
+                tagIds=i.get("tagIds", []),
+                client=self
+            ) for i in res.json()
+        ]
 
-    def build_location_lookup_tree(self):
+    def build_location_lookup_tree(self) -> Dict[str, str]:
         all_locations = self.get_all_locations()
         by_id = {loc.id: loc for loc in all_locations}
         full_paths = {}
+
         def get_path(loc):
             if loc.id in full_paths:
                 return full_paths[loc.id]
-            if not loc.parent_id:
+            if not loc.parentId:
                 full_paths[loc.id] = loc.name
             else:
-                parent = by_id.get(loc.parent_id)
-                if parent:
-                    full_paths[loc.id] = get_path(parent) + "/" + loc.name
-                else:
-                    full_paths[loc.id] = loc.name
+                parent = by_id.get(loc.parentId)
+                full_paths[loc.id] = (get_path(parent) + "/" + loc.name) if parent else loc.name
             return full_paths[loc.id]
+
         for loc in all_locations:
             get_path(loc)
         return full_paths
 
-    def build_tag_lookup(self):
+    def build_tag_lookup(self) -> Dict[str, str]:
         return {tag.id: tag.name for tag in self.get_tags()}
 
     def export_items_readable_csv(self, filepath: str):
@@ -251,10 +258,9 @@ class HomeboxClient:
                     "name": item.name,
                     "description": item.description,
                     "quantity": item.quantity,
-                    "locationPath": loc_map.get(item.location_id, ""),
-                    "tags": ", ".join(tag_map.get(tid, "") for tid in item.tag_ids)
+                    "locationPath": loc_map.get(item.locationId, ""),
+                    "tags": ", ".join(tag_map.get(tid, "") for tid in item.tagIds)
                 })
-        logging.info(f"Exported {len(items)} items to {filepath}")
 
     def update_items_from_csv_readable(self, filepath: str, dry_run: bool = False):
         with open(filepath, newline='', encoding='utf-8') as f:
@@ -262,7 +268,7 @@ class HomeboxClient:
             for row in reader:
                 item_id = row.get("id")
                 if not item_id:
-                    logging.warning(f"Row skipped, missing item id: {row}")
+                    logging.warning(f"Missing item id in row: {row}")
                     continue
                 location_id = self.resolve_location_path(row.get("locationPath", ""))
                 tag_ids = self.resolve_tag_names(row.get("tags", ""))
@@ -274,11 +280,12 @@ class HomeboxClient:
                     "tagIds": tag_ids
                 }
                 if dry_run:
-                    logging.info(f"[DRY RUN] Would update item ID {item_id} with data: {data}")
+                    logging.info(f"[DRY RUN] Would update item {item_id}: {data}")
                 else:
                     res = requests.put(f"{self.base_url}/items/{item_id}", headers=self.headers, json=data)
                     res.raise_for_status()
                     logging.info(f"Updated item '{row['name']}'")
+
 
 def load_locations_from_csv(filepath):
     with open(filepath, newline='', encoding='utf-8') as f:
