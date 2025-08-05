@@ -1,9 +1,4 @@
-# Type aliases
-LocationId = str
-TagId = str
-PathStr = str
-CsvFilePath = str
-
+#!/usr/bin/env python
 """
 homebox.py
 
@@ -25,26 +20,39 @@ Functions:
     cli: Command-line interface handler.
 """
 
+# Type aliases
+LocationId = str
+TagId = str
+PathStr = str
+CsvFilePath = str
+
 import requests
 import logging
 import argparse
 import csv
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Callable, Any
+import json
 
-base_url = "http://localhost:3100/api/v1"
-with open("username", "r", encoding="utf8") as ifile:
-    username = ifile.read().strip("\n")
-with open("homebox.key", "r", encoding="utf8") as ifile:
-    password = ifile.read().strip("\n")
+BASE_URL = "http://localhost:3100/api/v1"
+# with open("username", "r", encoding="utf8") as ifile:
+#    username = ifile.read().strip("\n")
+# with open("homebox.key", "r", encoding="utf8") as ifile:
+#    password = ifile.read().strip("\n")
+with open("creds.json", "r", encoding="utf8") as ifile:
+    CREDS = json.loads(ifile.read())
+    USERNAME = CREDS["username"]
+    PASSWORD = CREDS["password"]
 
 
 def get_client() -> Any:
     """get_client method."""
-    return HomeboxClient(base_url, username, password)
+    return HomeboxClient(BASE_URL, USERNAME, PASSWORD)
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 
 @dataclass
@@ -62,7 +70,9 @@ class Location:
         """parent method."""
         if self.parentId is None:
             return None
-        return next((l for l in self.client.get_all_locations() if l.id == self.parentId), None)
+        return next(
+            (l for l in self.client.get_all_locations() if l.id == self.parentId), None
+        )
 
     def delete(self) -> Any:
         """delete method."""
@@ -74,18 +84,30 @@ class Location:
 
     def rename(self, new_name: str) -> Any:
         """rename method."""
-        data = {"name": new_name, "description": self.description, "parentId": self.parentId}
+        data = {
+            "name": new_name,
+            "description": self.description,
+            "parentId": self.parentId,
+        }
         res = requests.put(
-            f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers, json=data
+            f"{self.client.base_url}/locations/{self.id}",
+            headers=self.client.headers,
+            json=data,
         )
         res.raise_for_status()
         self.name = new_name
 
     def set_description(self, new_description: str) -> Any:
         """set_description method."""
-        data = {"name": self.name, "description": new_description, "parentId": self.parentId}
+        data = {
+            "name": self.name,
+            "description": new_description,
+            "parentId": self.parentId,
+        }
         res = requests.put(
-            f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers, json=data
+            f"{self.client.base_url}/locations/{self.id}",
+            headers=self.client.headers,
+            json=data,
         )
         res.raise_for_status()
         self.description = new_description
@@ -95,9 +117,15 @@ class Location:
         parent = self.client.get_location(new_parent_name)
         if not parent:
             raise ValueError(f"Parent location '{new_parent_name}' not found.")
-        data = {"name": self.name, "description": self.description, "parentId": parent["id"]}
+        data = {
+            "name": self.name,
+            "description": self.description,
+            "parentId": parent["id"],
+        }
         res = requests.put(
-            f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers, json=data
+            f"{self.client.base_url}/locations/{self.id}",
+            headers=self.client.headers,
+            json=data,
         )
         res.raise_for_status()
         self.parentId = parent["id"]
@@ -122,7 +150,9 @@ class Tag:
 
     def delete(self) -> Any:
         """delete method."""
-        res = requests.delete(f"{self.client.base_url}/tags/{self.id}", headers=self.client.headers)
+        res = requests.delete(
+            f"{self.client.base_url}/tags/{self.id}", headers=self.client.headers
+        )
         res.raise_for_status()
 
     def rename(self, new_name: str) -> Any:
@@ -201,7 +231,9 @@ class HomeboxClient:
         locations = []
         for loc in base_locs:
             loc_id = loc["id"]
-            detail_res = requests.get(f"{self.base_url}/locations/{loc_id}", headers=self.headers)
+            detail_res = requests.get(
+                f"{self.base_url}/locations/{loc_id}", headers=self.headers
+            )
             detail_res.raise_for_status()
             detailed = detail_res.json()
             parent_obj = detailed.get("parent")
@@ -216,7 +248,9 @@ class HomeboxClient:
             locations.append(location)
         return locations
 
-    def get_location(self, name: str, parent_name: Optional[str] = None) -> Optional[dict]:
+    def get_location(
+        self, name: str, parent_name: Optional[str] = None
+    ) -> Optional[dict]:
         """
         Retrieves a location by name, optionally filtering by parent name.
         Uses /locations for fast match, then /locations/{id} for parent check.
@@ -242,11 +276,15 @@ class HomeboxClient:
     ) -> Optional[dict]:
         """create_location method."""
         if self.get_location(name, parent_name):
-            logging.info(f"Location '{name}' (parent: '{parent_name}') already exists. Skipping.")
+            logging.info(
+                f"Location '{name}' (parent: '{parent_name}') already exists. Skipping."
+            )
             return None
         parent_id = self.get_location(parent_name)["id"] if parent_name else None
         data = {"name": name, "description": description, "parentId": parent_id}
-        res = requests.post(f"{self.base_url}/locations", headers=self.headers, json=data)
+        res = requests.post(
+            f"{self.base_url}/locations", headers=self.headers, json=data
+        )
         res.raise_for_status()
         return res.json()
 
@@ -274,7 +312,9 @@ class HomeboxClient:
         for tag in self.get_tags():
             if tag.name == name:
                 return tag
-        res = requests.post(f"{self.base_url}/tags", headers=self.headers, json={"name": name})
+        res = requests.post(
+            f"{self.base_url}/tags", headers=self.headers, json={"name": name}
+        )
         res.raise_for_status()
         t = res.json()
         return Tag(id=t["id"], name=t["name"], client=self)
@@ -323,7 +363,9 @@ class HomeboxClient:
                 full_paths[loc.id] = loc.name
             else:
                 parent = by_id.get(loc.parentId)
-                full_paths[loc.id] = get_path(parent) + "/" + loc.name if parent else loc.name
+                full_paths[loc.id] = (
+                    get_path(parent) + "/" + loc.name if parent else loc.name
+                )
             return full_paths[loc.id]
 
         for loc in all_locations:
@@ -334,7 +376,9 @@ class HomeboxClient:
         """build_tag_lookup method."""
         return {tag.id: tag.name for tag in self.get_tags()}
 
-    def search_location(self, substring: str, ignore_case: bool = True) -> List[Location]:
+    def search_location(
+        self, substring: str, ignore_case: bool = True
+    ) -> List[Location]:
         """search_location method."""
         all_locations = self.get_all_locations()
         matches = []
@@ -363,7 +407,15 @@ class HomeboxClient:
         tag_map = self.build_tag_lookup()
         with open(filepath, mode="w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
-                f, fieldnames=["id", "name", "description", "quantity", "locationPath", "tags"]
+                f,
+                fieldnames=[
+                    "id",
+                    "name",
+                    "description",
+                    "quantity",
+                    "locationPath",
+                    "tags",
+                ],
             )
             writer.writeheader()
             for item in items:
@@ -374,11 +426,15 @@ class HomeboxClient:
                         "description": item.description,
                         "quantity": item.quantity,
                         "locationPath": loc_map.get(item.locationId, ""),
-                        "tags": ", ".join((tag_map.get(tid, "") for tid in item.tagIds)),
+                        "tags": ", ".join(
+                            (tag_map.get(tid, "") for tid in item.tagIds)
+                        ),
                     }
                 )
 
-    def update_items_from_csv_readable(self, filepath: PathStr, dry_run: bool = False) -> None:
+    def update_items_from_csv_readable(
+        self, filepath: PathStr, dry_run: bool = False
+    ) -> None:
         """update_items_from_csv_readable method."""
         with open(filepath, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -400,7 +456,9 @@ class HomeboxClient:
                     logging.info(f"[DRY RUN] Would update item {item_id}: {data}")
                 else:
                     res = requests.put(
-                        f"{self.base_url}/items/{item_id}", headers=self.headers, json=data
+                        f"{self.base_url}/items/{item_id}",
+                        headers=self.headers,
+                        json=data,
                     )
                     res.raise_for_status()
                     logging.info(f"Updated item '{row['name']}'")
