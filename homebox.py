@@ -4,7 +4,7 @@ import logging
 import argparse
 import csv
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Callable
 
 base_url = "http://localhost:3100/api/v1"
 username="patrick.glomski@gmail.com"
@@ -23,6 +23,12 @@ class Location:
     description: str
     parentId: Optional[str]
     client: 'HomeboxClient' = field(repr=False)
+
+    @property
+    def parent(self) -> Optional['Location']:
+        if self.parentId is None:
+            return None
+        return next((l for l in self.client.get_all_locations() if l.id == self.parentId), None)
 
     def delete(self):
         res = requests.delete(f"{self.client.base_url}/locations/{self.id}", headers=self.client.headers)
@@ -244,6 +250,16 @@ class HomeboxClient:
 
     def build_tag_lookup(self) -> Dict[str, str]:
         return {tag.id: tag.name for tag in self.get_tags()}
+
+    def search_location(self, substring: str, ignore_case: bool = True) -> List[Location]:
+        all_locations = self.get_all_locations()
+        matches = []
+        def match(a: str, b: str) -> bool:
+            return b.lower() in a.lower() if ignore_case else b in a
+        for loc in all_locations:
+            if match(loc.name, substring):
+                matches.append(loc)
+        return matches
 
     def export_items_readable_csv(self, filepath: str):
         items = self.get_items()
