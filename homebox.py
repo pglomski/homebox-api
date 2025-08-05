@@ -140,6 +140,36 @@ class Location:
 class Tag:
     """Tag class."""
 
+
+@dataclass
+class Label:
+    """Label class."""
+
+    id: str
+    name: str
+    client: "HomeboxClient" = field(repr=False)
+
+    def delete(self) -> Any:
+        """delete method."""
+        res = requests.delete(
+            f"{self.client.base_url}/labels/{self.id}", headers=self.client.headers
+        )
+        res.raise_for_status()
+
+    def rename(self, new_name: str) -> Any:
+        """rename method."""
+        res = requests.put(
+            f"{self.client.base_url}/labels/{self.id}",
+            headers=self.client.headers,
+            json={"name": new_name},
+        )
+        res.raise_for_status()
+        self.name = new_name
+
+    def to_dict(self) -> Dict[str, str]:
+        """to_dict method."""
+        return {"id": self.id, "name": self.name}
+
     id: str
     name: str
     client: "HomeboxClient" = field(repr=False)
@@ -459,6 +489,24 @@ class HomeboxClient:
                     res.raise_for_status()
                     logging.info(f"Updated item '{row['name']}'")
 
+
+
+    def get_all_labels(self) -> List[Label]:
+        """get_all_labels method."""
+        res = requests.get(f"{self.base_url}/labels", headers=self.headers)
+        res.raise_for_status()
+        return [Label(id=label["id"], name=label["name"], client=self) for label in res.json()]
+
+
+    def get_or_create_label(self, name: str) -> Label:
+        """get_or_create_label method."""
+        for label in self.get_all_labels():
+            if label.name == name:
+                return label
+        res = requests.post(f"{self.base_url}/labels", headers=self.headers, json={"name": name})
+        res.raise_for_status()
+        d = res.json()
+        return Label(id=d["id"], name=d["name"], client=self)
 
 def load_locations_from_csv(filepath: Any) -> Any:
     """load_locations_from_csv method."""
