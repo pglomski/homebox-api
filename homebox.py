@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Callable
 
 base_url = "http://localhost:3100/api/v1"
-username="patrick.glomski@gmail.com"
+with open('username', 'r', encoding='utf8') as ifile:
+    username = ifile.read().strip('\n')
 with open('homebox.key', 'r', encoding='utf8') as ifile:
     password = ifile.read().strip('\n')
 
