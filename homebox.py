@@ -3,15 +3,131 @@ import requests
 import logging
 import argparse
 import csv
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict
 
 base_url = "http://localhost:3100/api/v1"
 username="patrick.glomski@gmail.com"
-with open('homebox.key', 'r') as ifile:
-    password = ifile.read()
+with open('homebox.key', 'r', encoding='utf8') as ifile:
+    password = ifile.read().strip('\n')
+
+def get_client():
+    return HomeboxClient(base_url, username, password)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
+@dataclass
+class Location:
+    id: str
+    name: str
+    description: str
+    parent_id: Optional[str]
+    client: 'HomeboxClient' = field(repr=False)
+
+    def delete(self):
+        url = f"{self.client.base_url}/locations/{self.id}"
+        res = requests.delete(url, headers=self.client.headers)
+        res.raise_for_status()
+        logging.info(f"Deleted location '{self.name}'")
+
+    def set_parent(self, new_parent_name: str):
+        parent = self.client.get_location(new_parent_name)
+        if not parent:
+            raise ValueError(f"Parent location '{new_parent_name}' not found.")
+        url = f"{self.client.base_url}/locations/{self.id}"
+        data = {
+            "name": self.name,
+            "description": self.description,
+            "parentId": parent["id"]
+        }
+        res = requests.put(url, headers=self.client.headers, json=data)
+        res.raise_for_status()
+        logging.info(f"Updated parent of '{self.name}' to '{new_parent_name}'")
+        self.parent_id = parent["id"]
+
+    def rename(self, new_name: str):
+        url = f"{self.client.base_url}/locations/{self.id}"
+        data = {
+            "name": new_name,
+            "description": self.description,
+            "parentId": self.parent_id
+        }
+        res = requests.put(url, headers=self.client.headers, json=data)
+        res.raise_for_status()
+        logging.info(f"Renamed location from '{self.name}' to '{new_name}'")
+        self.name = new_name
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "parentId": self.parent_id
+        }
+
+    def set_description(self, new_description: str):
+        url = f"{self.client.base_url}/locations/{self.id}"
+        data = {
+            "name": self.name,
+            "description": new_description,
+            "parentId": self.parent_id
+        }
+        res = requests.put(url, headers=self.client.headers, json=data)
+        res.raise_for_status()
+        logging.info(f"Updated description for '{self.name}'")
+        self.description = new_description
+
+@dataclass
+class Tag:
+    id: str
+    name: str
+    client: 'HomeboxClient' = field(repr=False)
+
+    def delete(self):
+        url = f"{self.client.base_url}/tags/{self.id}"
+        res = requests.delete(url, headers=self.client.headers)
+        res.raise_for_status()
+        logging.info(f"Deleted tag '{self.name}'")
+
+    def rename(self, new_name: str):
+        url = f"{self.client.base_url}/tags/{self.id}"
+        res = requests.put(url, headers=self.client.headers, json={"name": new_name})
+        res.raise_for_status()
+        logging.info(f"Renamed tag '{self.name}' to '{new_name}'")
+        self.name = new_name
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name
+        }
+
+@dataclass
+class Item:
+    id: str
+    name: str
+    description: str
+    quantity: int
+    location_id: Optional[str]
+    tag_ids: List[str]
+    client: 'HomeboxClient' = field(repr=False)
+
+    def delete(self):
+        url = f"{self.client.base_url}/items/{self.id}"
+        res = requests.delete(url, headers=self.client.headers)
+        res.raise_for_status()
+        logging.info(f"Deleted item '{self.name}'")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "quantity": self.quantity,
+            "locationId": self.location_id,
+            "tagIds": self.tag_ids
+        }
 
 class HomeboxClient:
     def __init__(self, base_url, username, password):
@@ -29,91 +145,190 @@ class HomeboxClient:
     def get_all_locations(self):
         res = requests.get(f"{self.base_url}/locations", headers=self.headers)
         res.raise_for_status()
-        return res.json()
+        raw_locations = res.json()
+        return [Location(id=loc["id"], name=loc["name"], description=loc.get("description", ""), parent_id=loc.get("parentId"), client=self) for loc in raw_locations]
 
     def get_location(self, name, parent_name=None):
         locations = self.get_all_locations()
-        matches = [loc for loc in locations if loc["name"] == name]
-
+        matches = [loc for loc in locations if loc.name == name]
         if parent_name is None:
-            return matches[0] if matches else None
-
+            return matches[0].to_dict() if matches else None
         for loc in matches:
-            parent_id = loc.get("parentId")
+            parent_id = loc.parent_id
             if parent_id:
-                parent = next((p for p in locations if p["id"] == parent_id), None)
-                if parent and parent["name"] == parent_name:
-                    return loc
+                parent = next((p for p in locations if p.id == parent_id), None)
+                if parent and parent.name == parent_name:
+                    return loc.to_dict()
         return None
 
     def create_location(self, name, description="", parent_name=None):
         if self.get_location(name, parent_name):
             logging.info(f"Location '{name}' (parent: '{parent_name}') already exists. Skipping.")
             return None
-
         parent_id = None
         if parent_name:
             parent = self.get_location(parent_name)
             if not parent:
                 raise ValueError(f"Parent location '{parent_name}' not found.")
             parent_id = parent["id"]
-
-        data = {
-            "name": name,
-            "description": description,
-            "parentId": parent_id
-        }
+        data = {"name": name, "description": description, "parentId": parent_id}
         res = requests.post(f"{self.base_url}/locations", headers=self.headers, json=data)
         res.raise_for_status()
         logging.info(f"Created location '{name}' under parent '{parent_name}'")
         return res.json()
 
-c = HomeboxClient(base_url, username, password)
+    def resolve_location_path(self, path: str):
+        if not path:
+            return None
+        parts = path.strip().split('/')
+        current_parent = None
+        for part in parts:
+            loc = self.get_location(part, parent_name=current_parent)
+            if not loc:
+                raise ValueError(f"Location path '{path}' is invalid. Could not find '{part}' under '{current_parent}'")
+            current_parent = part
+        return loc["id"]
+
+    def get_tags(self):
+        res = requests.get(f"{self.base_url}/tags", headers=self.headers)
+        res.raise_for_status()
+        return [Tag(id=t["id"], name=t["name"], client=self) for t in res.json()]
+
+    def get_or_create_tag(self, name: str) -> Tag:
+        for tag in self.get_tags():
+            if tag.name == name:
+                return tag
+        res = requests.post(f"{self.base_url}/tags", headers=self.headers, json={"name": name})
+        res.raise_for_status()
+        t = res.json()
+        return Tag(id=t["id"], name=t["name"], client=self)
+
+    def resolve_tag_names(self, tag_names_str: str):
+        if not tag_names_str:
+            return []
+        tag_names = [t.strip() for t in tag_names_str.split(',')]
+        tags = [self.get_or_create_tag(name) for name in tag_names]
+        return [t.id for t in tags]
+
+    def get_items(self):
+        res = requests.get(f"{self.base_url}/items", headers=self.headers)
+        res.raise_for_status()
+        return [Item(id=i["id"], name=i["name"], description=i.get("description", ""), quantity=i.get("quantity", 1), location_id=i.get("locationId"), tag_ids=i.get("tagIds", []), client=self) for i in res.json()]
+
+    def build_location_lookup_tree(self):
+        all_locations = self.get_all_locations()
+        by_id = {loc.id: loc for loc in all_locations}
+        full_paths = {}
+        def get_path(loc):
+            if loc.id in full_paths:
+                return full_paths[loc.id]
+            if not loc.parent_id:
+                full_paths[loc.id] = loc.name
+            else:
+                parent = by_id.get(loc.parent_id)
+                if parent:
+                    full_paths[loc.id] = get_path(parent) + "/" + loc.name
+                else:
+                    full_paths[loc.id] = loc.name
+            return full_paths[loc.id]
+        for loc in all_locations:
+            get_path(loc)
+        return full_paths
+
+    def build_tag_lookup(self):
+        return {tag.id: tag.name for tag in self.get_tags()}
+
+    def export_items_readable_csv(self, filepath: str):
+        items = self.get_items()
+        loc_map = self.build_location_lookup_tree()
+        tag_map = self.build_tag_lookup()
+        with open(filepath, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=["id", "name", "description", "quantity", "locationPath", "tags"])
+            writer.writeheader()
+            for item in items:
+                writer.writerow({
+                    "id": item.id,
+                    "name": item.name,
+                    "description": item.description,
+                    "quantity": item.quantity,
+                    "locationPath": loc_map.get(item.location_id, ""),
+                    "tags": ", ".join(tag_map.get(tid, "") for tid in item.tag_ids)
+                })
+        logging.info(f"Exported {len(items)} items to {filepath}")
+
+    def update_items_from_csv_readable(self, filepath: str, dry_run: bool = False):
+        with open(filepath, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                item_id = row.get("id")
+                if not item_id:
+                    logging.warning(f"Row skipped, missing item id: {row}")
+                    continue
+                location_id = self.resolve_location_path(row.get("locationPath", ""))
+                tag_ids = self.resolve_tag_names(row.get("tags", ""))
+                data = {
+                    "name": row["name"],
+                    "description": row.get("description", ""),
+                    "quantity": int(row.get("quantity", 1)),
+                    "locationId": location_id,
+                    "tagIds": tag_ids
+                }
+                if dry_run:
+                    logging.info(f"[DRY RUN] Would update item ID {item_id} with data: {data}")
+                else:
+                    res = requests.put(f"{self.base_url}/items/{item_id}", headers=self.headers, json=data)
+                    res.raise_for_status()
+                    logging.info(f"Updated item '{row['name']}'")
 
 def load_locations_from_csv(filepath):
     with open(filepath, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        locations = []
-        for row in reader:
-            locations.append({
-                "name": row["name"],
-                "description": row.get("description", ""),
-                "parent": row.get("parent", None)
-            })
-        return locations
-
+        return [{"name": row["name"], "description": row.get("description", ""), "parent": row.get("parent", None)} for row in reader]
 
 def cli():
-    parser = argparse.ArgumentParser(description="Create Homebox locations with optional parent.")
-    parser.add_argument("--base-url", required=True, help="Base API URL, e.g. http://localhost:3100/api/v1")
-    parser.add_argument("--username", required=True, help="Homebox username (email)")
-    parser.add_argument("--password", required=True, help="Homebox password")
+    parser = argparse.ArgumentParser(description="Homebox CLI for managing locations, tags, and items.")
+    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--username", required=True)
+    parser.add_argument("--password", required=True)
+    parser.add_argument("--dry-run", action="store_true")
 
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--name", help="Single location name to create")
-    group.add_argument("--csv", help="Path to CSV file with multiple locations")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    parser.add_argument("--description", default="", help="Optional location description (single only)")
-    parser.add_argument("--parent", help="Optional parent location name (single only)")
-    parser.add_argument("--dry-run", action="store_true", help="Preview actions without making changes")
+    single_loc = subparsers.add_parser("create-location")
+    single_loc.add_argument("--name", required=True)
+    single_loc.add_argument("--description", default="")
+    single_loc.add_argument("--parent")
+
+    bulk_loc = subparsers.add_parser("import-locations")
+    bulk_loc.add_argument("--csv", required=True)
+
+    item_export = subparsers.add_parser("export-items")
+    item_export.add_argument("--csv", required=True)
+
+    item_update = subparsers.add_parser("update-items")
+    item_update.add_argument("--csv", required=True)
 
     args = parser.parse_args()
-
     client = HomeboxClient(args.base_url, args.username, args.password)
 
-    if args.name:
+    if args.command == "create-location":
         if args.dry_run:
-            logging.info(f"Dry run: would create location '{args.name}' with parent '{args.parent}'")
+            logging.info(f"[DRY RUN] Would create location '{args.name}' with parent '{args.parent}'")
         else:
             client.create_location(args.name, args.description, args.parent)
-    else:
-        locations = load_locations_from_csv(args.csv)
-        for loc in locations:
+
+    elif args.command == "import-locations":
+        for loc in load_locations_from_csv(args.csv):
             if args.dry_run:
-                logging.info(f"Dry run: would create location '{loc['name']}' with parent '{loc['parent']}'")
+                logging.info(f"[DRY RUN] Would create location '{loc['name']}' with parent '{loc['parent']}'")
             else:
                 client.create_location(loc["name"], loc["description"], loc["parent"])
 
+    elif args.command == "export-items":
+        client.export_items_readable_csv(args.csv)
+
+    elif args.command == "update-items":
+        client.update_items_from_csv_readable(args.csv, dry_run=args.dry_run)
 
 if __name__ == "__main__":
     cli()
