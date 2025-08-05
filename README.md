@@ -121,4 +121,4 @@ Licensed under the terms of the [GNU General Public License v3.0](https://www.gn
 
 ## 👨‍💻 Author
 
-Maintained by [Your Name](https://github.com/yourusername) with ❤️.
+Maintained by [pglomski](https://github.com/pglomski) with ❤️.
