@@ -1,4 +1,5 @@
 {
-'username':'daffy.duck@gmail.com',
-'password':'supersecret'
+"username":"daffy.duck@gmail.com",
+"password":"supersecret",
+"base_url":"http://localhost:3100"
 }

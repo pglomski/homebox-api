@@ -34,9 +34,9 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Callable, Any
 import json
 
-BASE_URL = "http://localhost:3100/api/v1"
 with open("creds.json", "r", encoding="utf8") as ifile:
     CREDS = json.loads(ifile.read())
+    BASE_URL = CREDS["base_url"] + "/api/v1"
     USERNAME = CREDS["username"]
     PASSWORD = CREDS["password"]
 

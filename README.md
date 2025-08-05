@@ -33,10 +33,11 @@ chmod +x homebox.py
 
 ## 🛠 Setup
 
-Store your Homebox credentials in the following files:
+Copy the sample file and update with your credentials:
 
-- `username` — contains your Homebox username (one line)
-- `homebox.key` — contains your password (one line)
+```
+cp creds.json.sample creds.json
+```
 
 ---
 
