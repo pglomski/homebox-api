@@ -35,10 +35,6 @@ from typing import Optional, List, Dict, Callable, Any
 import json
 
 BASE_URL = "http://localhost:3100/api/v1"
-# with open("username", "r", encoding="utf8") as ifile:
-#    username = ifile.read().strip("\n")
-# with open("homebox.key", "r", encoding="utf8") as ifile:
-#    password = ifile.read().strip("\n")
 with open("creds.json", "r", encoding="utf8") as ifile:
     CREDS = json.loads(ifile.read())
     USERNAME = CREDS["username"]
